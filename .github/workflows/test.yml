@@ -1,0 +1,36 @@
+name: Test Kiro.el
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        emacs-version: ['27.2', '28.2', '29.1']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install Emacs
+      uses: purcell/setup-emacs@master
+      with:
+        version: ${{ matrix.emacs-version }}
+    
+    - name: Install Kiro CLI
+      run: |
+        curl -fsSL https://kiro.aws.dev/install.sh | bash
+        echo "$HOME/.kiro/bin" >> $GITHUB_PATH
+    
+    - name: Byte compile
+      run: |
+        emacs --batch --eval "(byte-compile-file \"lisp/kiro-osm-save.el\")"
+        emacs --batch --eval "(byte-compile-file \"lisp/kiro-task-mode.el\")"
+    
+    - name: Check syntax
+      run: |
+        emacs --batch --eval "(checkdoc-file \"lisp/kiro-osm-save.el\")" || true
