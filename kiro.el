@@ -31,6 +31,13 @@
   (kiro-prompt-queue))
 
 ;;;###autoload
+(defun kiro-homedir-projects ()
+  "List homedir web projects."
+  (interactive)
+  (load-file (expand-file-name "~/.emacs.d/kiro.el/kiro-homedir-web.el"))
+  (kiro-homedir-list-projects))
+
+;;;###autoload
 (defun kiro-spool-start ()
   "Start Kiro spool service."
   (interactive)
