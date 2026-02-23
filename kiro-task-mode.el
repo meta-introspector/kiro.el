@@ -1,6 +1,20 @@
 ;;; kiro-task-mode.el --- Org-inspired task buffer management for Kiro
+;;; DASL-T42-FRACTRAN-ZKP: [(523 . 524) (151 . 152) (499 . 500)]
+;;; Content-Hash: 260680809
+;;; Version: 1.0.1
+;;; Monster-Class: 42
+;;; Shard-ID: 3
 
 (require 'org)
+
+(defconst kiro-task-mode-version "1.0.1"
+  "Version of kiro-task-mode")
+
+(defconst kiro-task-mode-fractran-zkp '((523 . 524) (151 . 152) (499 . 500))
+  "FRACTRAN zero-knowledge proof of this version")
+
+(defconst kiro-task-mode-content-hash 260680809
+  "DASL T42 content hash")
 
 (defvar kiro-task-directory "~/tasks/"
   "Directory for Kiro task files")
@@ -131,13 +145,17 @@
 (defun kiro-task-save-chat ()
   "Save current Kiro chat to task file"
   (interactive)
-  (when (buffer-file-name)
-    (let* ((task-file (file-name-nondirectory (buffer-file-name)))
-           (task-name (replace-regexp-in-string "^task-\\(.*\\)\\.kiro\\.org$" "\\1" task-file))
-           (chat-file (format "chats/task-%s.json" task-name))
-           (save-cmd (format "/chat save %s" chat-file)))
-      (kiro-osm-save-chat)
-      (message "✅ Saved chat to %s" chat-file))))
+  (let* ((base-name (if (buffer-file-name)
+                        (file-name-nondirectory (buffer-file-name))
+                      (buffer-name)))
+         (task-name (replace-regexp-in-string "[*<>]" "" 
+                      (replace-regexp-in-string "^task-\\(.*\\)\\.kiro\\.org$" "\\1" base-name)))
+         (timestamp (format-time-string "%Y%m%d-%H%M%S"))
+         (save-file (format "chats/%s-%s.json" task-name timestamp)))
+    (kiro-send-command (format "/chat save %s" save-file))
+    (message "✅ Saved: %s" save-file)))
+
+(defalias 'kiro-osm-save-chat 'kiro-task-save-chat)
 
 (defvar kiro-task-mode-map
   (let ((map (make-sparse-keymap)))
