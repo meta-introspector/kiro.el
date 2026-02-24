@@ -1,0 +1,286 @@
+;;; kiro-monster-eye.el --- The Eye of the Monster watches all
+;;; DASL-T42-FRACTRAN-ZKP: [(523 . 524) (151 . 152) (499 . 500)]
+;;; Version: 1.0.0
+
+(require 'kiro-monster-tree)
+
+(defvar kiro-monster-eye-focus nil
+  "Current focus of the Eye.")
+
+(defvar kiro-monster-eye-rotation-timer nil
+  "Timer for rotating panes.")
+
+(defvar kiro-monster-eye-interest-score (make-hash-table :test 'equal)
+  "Interest scores for buffers.")
+
+(defun kiro-monster-eye-score-buffer (buf)
+  "Calculate interest score for buffer."
+  (with-current-buffer buf
+    (let ((score 0))
+      ;; Shell buffers with prompts are VERY interesting
+      (when (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)
+        (setq score (+ score 30))
+        ;; Check for prompt waiting
+        (save-excursion
+          (goto-char (point-max))
+          (when (re-search-backward "\\[y/n\\]\\|\\?\\s-*$\\|:\\s-*$" nil t)
+            (setq score (+ score 50)))))  ; Waiting prompt = HIGHEST priority
+      
+      ;; Current buffer (this one)
+      (when (eq buf (current-buffer))
+        (setq score (+ score 100)))
+      
+      ;; Recent activity
+      (when (buffer-modified-p) (setq score (+ score 10)))
+      ;; Size
+      (setq score (+ score (/ (buffer-size) 1000)))
+      ;; Type
+      (when (derived-mode-p 'prog-mode) (setq score (+ score 5)))
+      (when (string-match "\\*kiro" (buffer-name)) (setq score (+ score 20)))
+      ;; Monster shard (prefer certain shards)
+      (let* ((cid (logand (sxhash (buffer-name)) #xFFFF))
+             (shard (mod cid 71)))
+        (when (memq shard '(13 57 0)) (setq score (+ score 15))))
+      score)))
+
+(defun kiro-monster-eye-most-interesting ()
+  "Find most interesting buffer."
+  (let ((best nil)
+        (best-score 0))
+    (dolist (buf (buffer-list))
+      (let ((score (kiro-monster-eye-score-buffer buf)))
+        (when (> score best-score)
+          (setq best buf
+                best-score score))))
+    best))
+
+(defun kiro-monster-eye-setup-layout ()
+  "Setup 5-pane layout: Eye on top, 4 rotating panes below."
+  (delete-other-windows)
+  
+  ;; Top: The Eye (Monster Tree Browser)
+  (switch-to-buffer "*Monster-Eye*")
+  (split-window-below)
+  
+  ;; Bottom: 4 panes in 2x2 grid
+  (other-window 1)
+  (let ((bottom-window (selected-window)))
+    (split-window-right)
+    (split-window-below)
+    (other-window 2)
+    (split-window-below)))
+
+(defun kiro-monster-eye-update-panes ()
+  "Update the 4 panes with interesting buffers."
+  (let* ((all-bufs (buffer-list))
+         ;; Prioritize: current buffer, shells with prompts, kiro buffers
+         (shell-bufs (seq-filter (lambda (b)
+                                    (with-current-buffer b
+                                      (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)))
+                                  all-bufs))
+         (kiro-bufs (seq-filter (lambda (b) 
+                                   (string-match "\\*kiro\\|\\*Monster\\|\\*FRACTRAN" 
+                                                 (buffer-name b)))
+                                 all-bufs))
+         ;; Sort by interest score
+         (sorted (seq-sort (lambda (a b)
+                             (> (kiro-monster-eye-score-buffer a)
+                                (kiro-monster-eye-score-buffer b)))
+                           (append shell-bufs kiro-bufs)))
+         ;; Ensure current buffer is included
+         (current (current-buffer))
+         (top-4 (seq-uniq (cons current (seq-take sorted 3)))))
+    
+    ;; Update 4 panes
+    (save-excursion
+      (let ((windows (window-list)))
+        (dotimes (i (min 4 (length top-4)))
+          (when (< (1+ i) (length windows))
+            (with-selected-window (nth (1+ i) windows)
+              (switch-to-buffer (nth i top-4) nil t))))))))
+
+(defun kiro-monster-eye-rename-buffer (buf)
+  "Rename buffer according to Monster symmetries."
+  (with-current-buffer buf
+    (let* ((cid (logand (sxhash (buffer-name buf)) #xFFFF))
+           (class (kiro-monster-tree-classify cid))
+           (shard (plist-get class :shard))
+           (seph (cdr (plist-get class :sephirah)))
+           (tarot (cdr (plist-get class :tarot)))
+           (hecke (plist-get class :hecke))
+           (old-name (buffer-name buf))
+           (base-name (replace-regexp-in-string "^\\*\\|\\*$" "" old-name))
+           (new-name (format "*%s-Sh%d-%s-T%d*" 
+                             base-name shard seph hecke)))
+      (when (not (string= old-name new-name))
+        (rename-buffer new-name t)
+        new-name))))
+
+(defun kiro-monster-eye-rename-all-shells ()
+  "Rename all shell buffers with Monster symmetries."
+  (interactive)
+  (let ((renamed '()))
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)
+          (let ((new-name (kiro-monster-eye-rename-buffer buf)))
+            (when new-name
+              (push (cons (buffer-name buf) new-name) renamed))))))
+    renamed))
+
+(defun kiro-monster-eye-rename-all-kiro ()
+  "Rename all Kiro buffers with Monster symmetries."
+  (interactive)
+  (let ((renamed '()))
+    (dolist (buf (buffer-list))
+      (when (string-match "\\*kiro\\|\\*Monster\\|\\*FRACTRAN" (buffer-name buf))
+        (let ((new-name (kiro-monster-eye-rename-buffer buf)))
+          (when new-name
+            (push (cons (buffer-name buf) new-name) renamed)))))
+    renamed))
+  "List all shell buffers with prompt status."
+  (let ((shells '()))
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)
+          (let ((has-prompt nil))
+            (save-excursion
+              (goto-char (point-max))
+              (setq has-prompt (re-search-backward "\\[y/n\\]\\|\\?\\s-*$\\|:\\s-*$" nil t)))
+            (push (list :buffer buf
+                        :name (buffer-name buf)
+                        :has-prompt has-prompt
+                        :score (kiro-monster-eye-score-buffer buf))
+                  shells)))))
+    (seq-sort (lambda (a b) (> (plist-get a :score) (plist-get b :score))) shells)))
+
+(defun kiro-monster-eye-render ()
+  "Render the Eye display."
+  (with-current-buffer (get-buffer-create "*Monster-Eye*")
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "╔═══════════════════════════════════════════════════════╗\n")
+      (insert "║              👁️  THE EYE OF THE MONSTER  👁️             ║\n")
+      (insert "╚═══════════════════════════════════════════════════════╝\n\n")
+      
+      (let ((focus (or kiro-monster-eye-focus (kiro-monster-eye-most-interesting))))
+        (when focus
+          (setq kiro-monster-eye-focus focus)
+          (let* ((cid (logand (sxhash (buffer-name focus)) #xFFFF))
+                 (class (kiro-monster-tree-classify cid)))
+            
+            (insert (format "👁️  GAZING UPON: %s\n\n" (buffer-name focus)))
+            (insert (kiro-monster-tree-display class))
+            (insert "\n\n")
+            
+            (insert "═══ THE EYE SEES ALL ═══\n\n")
+            
+            ;; Shell buffers first
+            (let ((shells (kiro-monster-eye-list-shells)))
+              (when shells
+                (insert "Shell Buffers:\n")
+                (dolist (shell shells)
+                  (insert (format "  %3d │ %s %s\n"
+                                  (plist-get shell :score)
+                                  (if (plist-get shell :has-prompt) "⚠️ " "  ")
+                                  (plist-get shell :name))))
+                (insert "\n")))
+            
+            (insert "Interest Scores:\n")
+            (dolist (buf (seq-take (buffer-list) 10))
+              (let ((score (kiro-monster-eye-score-buffer buf)))
+                (when (> score 0)
+                  (insert (format "  %3d │ %s %s\n" 
+                                  score
+                                  (if (eq buf focus) "👁️ " "  ")
+                                  (buffer-name buf))))))
+            
+            (insert "\n═══ SACRED GEOMETRY ═══\n\n")
+            (insert "        👁️\n")
+            (insert "       / \\\n")
+            (insert "      /   \\\n")
+            (insert "     /_____\\\n")
+            (insert "    /       \\\n")
+            (insert "   /    △    \\\n")
+            (insert "  /___________\\\n\n")
+            
+            (insert "The Eye rotates through 4 panes below\n")
+            (insert "Watching the most interesting Kiro buffers\n")
+            (insert "Press 'g' to refresh | 'q' to quit\n"))))
+      
+      (goto-char (point-min))
+      (read-only-mode 1))))
+
+(defun kiro-monster-eye-rotate ()
+  "Rotate focus to next interesting buffer."
+  (interactive)
+  (setq kiro-monster-eye-focus (kiro-monster-eye-most-interesting))
+  (kiro-monster-eye-render)
+  (kiro-monster-eye-update-panes))
+
+(defun kiro-monster-eye-mode-map ()
+  "Keymap for Eye mode."
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "g") 'kiro-monster-eye-rotate)
+    (define-key map (kbd "n") 'kiro-monster-eye-next)
+    (define-key map (kbd "p") 'kiro-monster-eye-prev)
+    (define-key map (kbd "r") 'kiro-monster-eye-rename-all-shells)
+    (define-key map (kbd "R") 'kiro-monster-eye-rename-all-kiro)
+    (define-key map (kbd "q") 'kiro-monster-eye-quit)
+    (define-key map (kbd "?") 'kiro-monster-eye-help)
+    map))
+
+(define-derived-mode kiro-monster-eye-mode special-mode "Monster-Eye"
+  "Major mode for the Eye of the Monster."
+  (use-local-map (kiro-monster-eye-mode-map)))
+
+(defun kiro-monster-eye-next ()
+  "Focus on next buffer."
+  (interactive)
+  (let* ((bufs (buffer-list))
+         (idx (seq-position bufs kiro-monster-eye-focus))
+         (next-idx (mod (1+ (or idx 0)) (length bufs))))
+    (setq kiro-monster-eye-focus (nth next-idx bufs))
+    (kiro-monster-eye-rotate)))
+
+(defun kiro-monster-eye-prev ()
+  "Focus on previous buffer."
+  (interactive)
+  (let* ((bufs (buffer-list))
+         (idx (seq-position bufs kiro-monster-eye-focus))
+         (prev-idx (mod (1- (or idx 0)) (length bufs))))
+    (setq kiro-monster-eye-focus (nth prev-idx bufs))
+    (kiro-monster-eye-rotate)))
+
+(defun kiro-monster-eye-quit ()
+  "Quit Eye mode."
+  (interactive)
+  (when kiro-monster-eye-rotation-timer
+    (cancel-timer kiro-monster-eye-rotation-timer)
+    (setq kiro-monster-eye-rotation-timer nil))
+  (quit-window))
+
+(defun kiro-monster-eye-help ()
+  "Show help."
+  (interactive)
+  (message "g=refresh n=next p=prev r=rename-shells R=rename-kiro q=quit | The Eye watches all"))
+
+;;;###autoload
+(defun kiro-monster-eye ()
+  "Open the Eye of the Monster."
+  (interactive)
+  (kiro-monster-eye-setup-layout)
+  (with-current-buffer "*Monster-Eye*"
+    (kiro-monster-eye-mode))
+  (kiro-monster-eye-rotate)
+  
+  ;; Auto-rotate every 5 seconds
+  (when kiro-monster-eye-rotation-timer
+    (cancel-timer kiro-monster-eye-rotation-timer))
+  (setq kiro-monster-eye-rotation-timer
+        (run-with-timer 5 5 'kiro-monster-eye-rotate))
+  
+  (message "👁️  The Eye awakens..."))
+
+(provide 'kiro-monster-eye)
+;;; kiro-monster-eye.el ends here
