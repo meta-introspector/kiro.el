@@ -61,18 +61,24 @@
 (defvar kiro-monster-eye-interest-score (make-hash-table :test 'equal)
   "Interest scores for buffers.")
 
+(defun kiro-monster-eye-has-prompt-p (buf)
+  "Check if buffer has waiting prompt."
+  (with-current-buffer buf
+    (save-excursion
+      (goto-char (point-max))
+      (or (re-search-backward "\\[y/n\\]\\s-*$" (max (point-min) (- (point-max) 200)) t)
+          (re-search-backward "\\?\\s-*$" (max (point-min) (- (point-max) 200)) t)
+          (re-search-backward ":\\s-*$" (max (point-min) (- (point-max) 200)) t)))))
+
 (defun kiro-monster-eye-score-buffer (buf)
   "Calculate interest score for buffer."
   (with-current-buffer buf
     (let ((score 0))
-      ;; Shell buffers with prompts are VERY interesting
-      (when (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)
+      ;; Shell buffers with prompts get HIGHEST priority
+      (when (derived-mode-p 'shell-mode 'eshell-mode 'term-mode 'comint-mode)
         (setq score (+ score 30))
-        ;; Check for prompt waiting
-        (save-excursion
-          (goto-char (point-max))
-          (when (re-search-backward "\\[y/n\\]\\|\\?\\s-*$\\|:\\s-*$" nil t)
-            (setq score (+ score 50)))))  ; Waiting prompt = HIGHEST priority
+        (when (kiro-monster-eye-has-prompt-p buf)
+          (setq score (+ score 1000))))  ; Waiting prompt = TOP priority
       
       ;; Current buffer (this one)
       (when (eq buf (current-buffer))
@@ -119,25 +125,23 @@
     (split-window-below)))
 
 (defun kiro-monster-eye-update-panes ()
-  "Update the 4 panes with interesting buffers."
+  "Update the 4 panes with most important shells (prompts first)."
   (let* ((all-bufs (buffer-list))
-         ;; Prioritize: current buffer, shells with prompts, kiro buffers
+         ;; Get shells with prompts (highest priority)
          (shell-bufs (seq-filter (lambda (b)
                                     (with-current-buffer b
-                                      (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)))
+                                      (derived-mode-p 'shell-mode 'eshell-mode 'term-mode 'comint-mode)))
                                   all-bufs))
-         (kiro-bufs (seq-filter (lambda (b) 
-                                   (string-match "\\*kiro\\|\\*Monster\\|\\*FRACTRAN" 
-                                                 (buffer-name b)))
-                                 all-bufs))
-         ;; Sort by interest score
+         ;; Sort by: has-prompt (yes=1000 points), then interest score
          (sorted (seq-sort (lambda (a b)
-                             (> (kiro-monster-eye-score-buffer a)
-                                (kiro-monster-eye-score-buffer b)))
-                           (append shell-bufs kiro-bufs)))
-         ;; Ensure current buffer is included
-         (current (current-buffer))
-         (top-4 (seq-uniq (cons current (seq-take sorted 3)))))
+                             (let ((score-a (+ (kiro-monster-eye-score-buffer a)
+                                               (if (kiro-monster-eye-has-prompt-p a) 1000 0)))
+                                   (score-b (+ (kiro-monster-eye-score-buffer b)
+                                               (if (kiro-monster-eye-has-prompt-p b) 1000 0))))
+                               (> score-a score-b)))
+                           shell-bufs))
+         ;; Top 4 shells
+         (top-4 (seq-take sorted 4)))
     
     ;; Update 4 panes
     (save-excursion
