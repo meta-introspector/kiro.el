@@ -38,6 +38,23 @@
                   (= h (1- harmonic))))
               buffers))
 
+(defun kiro-monster-eye-list-shells ()
+  "List all shell buffers with prompt status."
+  (let ((shells '()))
+    (dolist (buf (buffer-list))
+      (with-current-buffer buf
+        (when (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)
+          (let ((has-prompt nil))
+            (save-excursion
+              (goto-char (point-max))
+              (setq has-prompt (re-search-backward "\\[y/n\\]\\|\\?\\s-*$\\|:\\s-*$" nil t)))
+            (push (list :buffer buf
+                        :name (buffer-name buf)
+                        :has-prompt has-prompt
+                        :score (kiro-monster-eye-score-buffer buf))
+                  shells)))))
+    (seq-sort (lambda (a b) (> (plist-get a :score) (plist-get b :score))) shells)))
+
 (defvar kiro-monster-eye-rotation-timer nil
   "Timer for rotating panes.")
 
@@ -170,21 +187,6 @@
             (push (cons (buffer-name buf) new-name) renamed)))))
     renamed))
   "List all shell buffers with prompt status."
-  (let ((shells '()))
-    (dolist (buf (buffer-list))
-      (with-current-buffer buf
-        (when (derived-mode-p 'shell-mode 'eshell-mode 'term-mode)
-          (let ((has-prompt nil))
-            (save-excursion
-              (goto-char (point-max))
-              (setq has-prompt (re-search-backward "\\[y/n\\]\\|\\?\\s-*$\\|:\\s-*$" nil t)))
-            (push (list :buffer buf
-                        :name (buffer-name buf)
-                        :has-prompt has-prompt
-                        :score (kiro-monster-eye-score-buffer buf))
-                  shells)))))
-    (seq-sort (lambda (a b) (> (plist-get a :score) (plist-get b :score))) shells)))
-
 (defun kiro-monster-eye-render ()
   "Render the Eye display."
   (with-current-buffer (get-buffer-create "*Monster-Eye*")
