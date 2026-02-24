@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FRACTRAN-DASL Monster Emulator</title>
+    <style>
+        body { font-family: monospace; background: #1e1e1e; color: #d4d4d4; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #4ec9b0; text-align: center; }
+        .panel { background: #252526; border: 1px solid #3e3e42; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .panel h2 { color: #569cd6; margin-top: 0; }
+        textarea { width: 100%; background: #1e1e1e; color: #d4d4d4; border: 1px solid #3e3e42; padding: 10px; font-family: monospace; }
+        button { background: #0e639c; color: white; border: none; padding: 10px 20px; cursor: pointer; margin: 5px; border-radius: 3px; }
+        button:hover { background: #1177bb; }
+        .output { background: #1e1e1e; padding: 10px; border: 1px solid #3e3e42; min-height: 100px; max-height: 400px; overflow-y: auto; }
+        .monster-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+        .stat { background: #2d2d30; padding: 10px; border-left: 3px solid #4ec9b0; }
+        .stat-label { color: #858585; font-size: 0.9em; }
+        .stat-value { color: #4ec9b0; font-size: 1.2em; font-weight: bold; }
+        .example { cursor: pointer; color: #569cd6; text-decoration: underline; }
+        .example:hover { color: #4ec9b0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔯 FRACTRAN-DASL Monster Emulator 👁️</h1>
+        
+        <div class="panel">
+            <h2>Elisp Input</h2>
+            <textarea id="elisp-input" rows="6" placeholder="Enter Elisp code, e.g., (+ 1 2)">(+ 1 2)</textarea>
+            <button onclick="runFractran()">▶ Run FRACTRAN</button>
+            <button onclick="loadExample('add')">Example: Add</button>
+            <button onclick="loadExample('multiply')">Example: Multiply</button>
+            <button onclick="loadExample('factorial')">Example: Factorial</button>
+        </div>
+
+        <div class="panel">
+            <h2>FRACTRAN Program</h2>
+            <div id="fractran-output" class="output">Click "Run FRACTRAN" to generate...</div>
+        </div>
+
+        <div class="panel">
+            <h2>Monster Classification</h2>
+            <div class="monster-info">
+                <div class="stat">
+                    <div class="stat-label">CID</div>
+                    <div class="stat-value" id="cid">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Shard</div>
+                    <div class="stat-value" id="shard">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Harmonic</div>
+                    <div class="stat-value" id="harmonic">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Sephirah</div>
+                    <div class="stat-value" id="sephirah">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Tarot</div>
+                    <div class="stat-value" id="tarot">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Hecke</div>
+                    <div class="stat-value" id="hecke">-</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2>Execution Trace</h2>
+            <div id="trace-output" class="output">Execution steps will appear here...</div>
+        </div>
+    </div>
+
+    <script>
+        // Monster group conjugacy classes (simplified)
+        const MONSTER_CLASSES = ['1A', '2A', '2B', '3A', '3B', '3C', '4A', '4B', '5A', '5B', '6A', '6B', '7A', '7B', '8A', '10A', '11A', '12A', '13A', '14A', '15A'];
+        
+        // Sephiroth (Tree of Life)
+        const SEPHIROTH = ['Kether', 'Chokmah', 'Binah', 'Chesed', 'Geburah', 'Tiphareth', 'Netzach', 'Hod', 'Yesod', 'Malkuth'];
+        
+        // Tarot Major Arcana
+        const TAROT = ['Fool', 'Magician', 'Priestess', 'Empress', 'Emperor', 'Hierophant', 'Lovers', 'Chariot', 'Strength', 'Hermit', 'Wheel', 'Justice', 'Hanged', 'Death', 'Temperance', 'Devil', 'Tower', 'Star', 'Moon', 'Sun', 'Judgement', 'World'];
+        
+        // Hecke operators (Monster primes)
+        const HECKE_PRIMES = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 41, 47, 59, 71];
+
+        function hash(str) {
+            let h = 0;
+            for (let i = 0; i < str.length; i++) {
+                h = ((h << 5) - h) + str.charCodeAt(i);
+                h = h & 0xFFFF;
+            }
+            return h;
+        }
+
+        function classifyMonster(cid) {
+            const shard = cid % 71;
+            const harmonic = (shard % 13) + 1;
+            const sephirah = SEPHIROTH[shard % 10];
+            const tarot = TAROT[shard % 22];
+            const hecke = HECKE_PRIMES[shard % 15];
+            
+            return { cid, shard, harmonic, sephirah, tarot, hecke };
+        }
+
+        function elispToFractran(elisp) {
+            // Simple Elisp to FRACTRAN translator
+            elisp = elisp.trim();
+            
+            if (elisp.match(/^\((\+|\-|\*|\/)\s+\d+\s+\d+\)$/)) {
+                const match = elisp.match(/^\((\+|\-|\*|\/)\s+(\d+)\s+(\d+)\)$/);
+                const op = match[1];
+                const a = parseInt(match[2]);
+                const b = parseInt(match[3]);
+                
+                if (op === '+') {
+                    return [[b, 1]]; // Simplified: add b
+                } else if (op === '*') {
+                    return [[b, 1]]; // Simplified: multiply by b
+                } else if (op === '-') {
+                    return [[1, b]]; // Simplified: divide by b
+                } else if (op === '/') {
+                    return [[1, b]]; // Simplified: divide by b
+                }
+            }
+            
+            // Default: identity
+            return [[1, 1]];
+        }
+
+        function runFractranStep(n, program) {
+            for (let [num, den] of program) {
+                if (n % den === 0) {
+                    return (n / den) * num;
+                }
+            }
+            return null;
+        }
+
+        function runFractran() {
+            const elisp = document.getElementById('elisp-input').value;
+            const program = elispToFractran(elisp);
+            
+            // Generate CID
+            const cid = hash(elisp);
+            const classification = classifyMonster(cid);
+            
+            // Update Monster info
+            document.getElementById('cid').textContent = '0x' + cid.toString(16).toUpperCase();
+            document.getElementById('shard').textContent = classification.shard;
+            document.getElementById('harmonic').textContent = classification.harmonic + '/13';
+            document.getElementById('sephirah').textContent = classification.sephirah;
+            document.getElementById('tarot').textContent = classification.tarot;
+            document.getElementById('hecke').textContent = 'T_' + classification.hecke;
+            
+            // Display FRACTRAN program
+            const fractranStr = program.map(([n, d]) => `${n}/${d}`).join(', ');
+            document.getElementById('fractran-output').innerHTML = `
+                <strong>Program:</strong> [${fractranStr}]<br>
+                <strong>Input:</strong> ${elisp}<br>
+                <strong>CID:</strong> 0x${cid.toString(16).toUpperCase()}<br>
+                <strong>Shard:</strong> ${classification.shard}/71
+            `;
+            
+            // Execute FRACTRAN
+            let n = 2; // Start with 2
+            let steps = [];
+            let maxSteps = 20;
+            
+            for (let i = 0; i < maxSteps; i++) {
+                const next = runFractranStep(n, program);
+                const stepClass = MONSTER_CLASSES[n % MONSTER_CLASSES.length];
+                steps.push(`Step ${i}: n=${n} → ${next !== null ? next : 'HALT'} [${stepClass}]`);
+                
+                if (next === null) break;
+                n = next;
+            }
+            
+            document.getElementById('trace-output').innerHTML = steps.join('<br>');
+        }
+
+        function loadExample(type) {
+            const examples = {
+                'add': '(+ 3 5)',
+                'multiply': '(* 4 7)',
+                'factorial': '(factorial 5)'
+            };
+            document.getElementById('elisp-input').value = examples[type];
+        }
+
+        // Auto-run on load
+        window.onload = () => runFractran();
+    </script>
+</body>
+</html>
