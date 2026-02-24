@@ -109,20 +109,25 @@
     best))
 
 (defun kiro-monster-eye-setup-layout ()
-  "Setup 5-pane layout: Eye on top, 4 rotating panes below."
+  "Setup 5-pane layout: Eye on top, 4 shell panes below."
   (delete-other-windows)
   
   ;; Top: The Eye (Monster Tree Browser)
   (switch-to-buffer "*Monster-Eye*")
-  (split-window-below)
-  
-  ;; Bottom: 4 panes in 2x2 grid
-  (other-window 1)
-  (let ((bottom-window (selected-window)))
-    (split-window-right)
+  (let ((eye-window (selected-window)))
     (split-window-below)
-    (other-window 2)
-    (split-window-below)))
+    
+    ;; Bottom: 4 panes in 2x2 grid
+    (other-window 1)
+    (let ((bottom-start (selected-window)))
+      (split-window-right)
+      (other-window 1)
+      (split-window-below)
+      (select-window bottom-start)
+      (split-window-below)
+      
+      ;; Return to Eye window
+      (select-window eye-window))))
 
 (defun kiro-monster-eye-update-panes ()
   "Update the 4 panes with shells needing prompts (or most active)."
@@ -141,13 +146,11 @@
          ;; Prompts first, then active shells, take top 4
          (top-4 (seq-take (append with-prompts sorted-active) 4)))
     
-    ;; Update 4 panes
-    (save-excursion
-      (let ((windows (window-list)))
-        (dotimes (i (min 4 (length top-4)))
-          (when (< (1+ i) (length windows))
-            (with-selected-window (nth (1+ i) windows)
-              (switch-to-buffer (nth i top-4) nil t))))))))
+    ;; Update 4 bottom panes (skip first window which is Eye)
+    (let ((windows (cdr (window-list))))  ; Skip Eye window
+      (dotimes (i (min 4 (length top-4) (length windows)))
+        (with-selected-window (nth i windows)
+          (switch-to-buffer (nth i top-4) nil t))))))
 
 (defun kiro-monster-eye-rename-buffer (buf)
   "Rename buffer according to Monster symmetries."
