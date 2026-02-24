@@ -345,12 +345,6 @@
     (kiro-monster-eye-mode))
   (kiro-monster-eye-rotate)
   
-  ;; Auto-rotate every 5 seconds
-  (when kiro-monster-eye-rotation-timer
-    (cancel-timer kiro-monster-eye-rotation-timer))
-  (setq kiro-monster-eye-rotation-timer
-        (run-with-timer 5 5 'kiro-monster-eye-rotate))
-  
   (message "👁️  The Eye awakens..."))
 
 (provide 'kiro-monster-eye)
