@@ -125,23 +125,21 @@
     (split-window-below)))
 
 (defun kiro-monster-eye-update-panes ()
-  "Update the 4 panes with most important shells (prompts first)."
-  (let* ((all-bufs (buffer-list))
-         ;; Get shells with prompts (highest priority)
-         (shell-bufs (seq-filter (lambda (b)
+  "Update the 4 panes with shells needing prompts (or most active)."
+  (let* ((all-shells (seq-filter (lambda (b)
                                     (with-current-buffer b
                                       (derived-mode-p 'shell-mode 'eshell-mode 'term-mode 'comint-mode)))
-                                  all-bufs))
-         ;; Sort by: has-prompt (yes=1000 points), then interest score
-         (sorted (seq-sort (lambda (a b)
-                             (let ((score-a (+ (kiro-monster-eye-score-buffer a)
-                                               (if (kiro-monster-eye-has-prompt-p a) 1000 0)))
-                                   (score-b (+ (kiro-monster-eye-score-buffer b)
-                                               (if (kiro-monster-eye-has-prompt-p b) 1000 0))))
-                               (> score-a score-b)))
-                           shell-bufs))
-         ;; Top 4 shells
-         (top-4 (seq-take sorted 4)))
+                                  (buffer-list)))
+         ;; Separate shells with prompts from others
+         (with-prompts (seq-filter #'kiro-monster-eye-has-prompt-p all-shells))
+         (without-prompts (seq-filter (lambda (b) (not (kiro-monster-eye-has-prompt-p b))) all-shells))
+         ;; Sort non-prompt shells by activity
+         (sorted-active (seq-sort (lambda (a b)
+                                     (> (kiro-monster-eye-score-buffer a)
+                                        (kiro-monster-eye-score-buffer b)))
+                                   without-prompts))
+         ;; Prompts first, then active shells, take top 4
+         (top-4 (seq-take (append with-prompts sorted-active) 4)))
     
     ;; Update 4 panes
     (save-excursion
@@ -212,15 +210,24 @@
             
             (insert "═══ THE EYE SEES ALL ═══\n\n")
             
-            ;; Shell buffers first
+            ;; Shell buffers with prompts
             (let ((shells (kiro-monster-eye-list-shells)))
               (when shells
                 (insert "Shell Buffers:\n")
-                (dolist (shell shells)
-                  (insert (format "  %3d │ %s %s\n"
-                                  (plist-get shell :score)
-                                  (if (plist-get shell :has-prompt) "⚠️ " "  ")
-                                  (plist-get shell :name))))
+                (let ((with-prompts (seq-filter (lambda (s) (plist-get s :has-prompt)) shells))
+                      (without-prompts (seq-filter (lambda (s) (not (plist-get s :has-prompt))) shells)))
+                  (when with-prompts
+                    (insert (format "  ⚠️  %d WAITING FOR INPUT:\n" (length with-prompts)))
+                    (dolist (shell with-prompts)
+                      (insert (format "    %3d │ ⚠️  %s\n"
+                                      (plist-get shell :score)
+                                      (plist-get shell :name)))))
+                  (when without-prompts
+                    (insert (format "  ✓ %d active:\n" (length without-prompts)))
+                    (dolist (shell (seq-take without-prompts 5))
+                      (insert (format "    %3d │   %s\n"
+                                      (plist-get shell :score)
+                                      (plist-get shell :name))))))
                 (insert "\n")))
             
             (insert "Interest Scores:\n")
