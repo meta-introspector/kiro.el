@@ -4,8 +4,39 @@
 
 (require 'kiro-monster-tree)
 
-(defvar kiro-monster-eye-focus nil
-  "Current focus of the Eye.")
+(defvar kiro-monster-eye-view-mode 'tree
+  "Current view mode: tree, wheel, kanban, harmonics.")
+
+(defvar kiro-monster-eye-harmonic 1
+  "Current harmonic (1-13 for shards).")
+
+(defun kiro-monster-eye-cycle-view ()
+  "Cycle through view modes."
+  (interactive)
+  (setq kiro-monster-eye-view-mode
+        (pcase kiro-monster-eye-view-mode
+          ('tree 'wheel)
+          ('wheel 'kanban)
+          ('kanban 'harmonics)
+          ('harmonics 'tree)))
+  (kiro-monster-eye-rotate)
+  (message "👁️  View: %s" kiro-monster-eye-view-mode))
+
+(defun kiro-monster-eye-cycle-harmonic ()
+  "Cycle through harmonics (1-13)."
+  (interactive)
+  (setq kiro-monster-eye-harmonic (1+ (mod kiro-monster-eye-harmonic 13)))
+  (kiro-monster-eye-rotate)
+  (message "👁️  Harmonic: %d/13" kiro-monster-eye-harmonic))
+
+(defun kiro-monster-eye-filter-by-harmonic (buffers harmonic)
+  "Filter buffers by harmonic (shard mod 13)."
+  (seq-filter (lambda (buf)
+                (let* ((cid (logand (sxhash (buffer-name buf)) #xFFFF))
+                       (shard (mod cid 71))
+                       (h (mod shard 13)))
+                  (= h (1- harmonic))))
+              buffers))
 
 (defvar kiro-monster-eye-rotation-timer nil
   "Timer for rotating panes.")
@@ -222,6 +253,8 @@
   "Keymap for Eye mode."
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "g") 'kiro-monster-eye-rotate)
+    (define-key map (kbd "v") 'kiro-monster-eye-cycle-view)
+    (define-key map (kbd "h") 'kiro-monster-eye-cycle-harmonic)
     (define-key map (kbd "n") 'kiro-monster-eye-next)
     (define-key map (kbd "p") 'kiro-monster-eye-prev)
     (define-key map (kbd "r") 'kiro-monster-eye-rename-all-shells)
@@ -263,7 +296,7 @@
 (defun kiro-monster-eye-help ()
   "Show help."
   (interactive)
-  (message "g=refresh n=next p=prev r=rename-shells R=rename-kiro q=quit | The Eye watches all"))
+  (message "v=view h=harmonic g=refresh n=next p=prev r=rename-shells R=rename-kiro q=quit"))
 
 ;;;###autoload
 (defun kiro-monster-eye ()
