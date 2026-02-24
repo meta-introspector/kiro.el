@@ -4,8 +4,22 @@
 
 (require 'kiro-monster-tree)
 
-(defvar kiro-monster-eye-view-mode 'tree
-  "Current view mode: tree, wheel, kanban, harmonics.")
+(defvar kiro-monster-eye-search-term nil
+  "Current search term for filtering buffers.")
+
+(defun kiro-monster-eye-search (term)
+  "Search and filter buffers by keyword."
+  (interactive "sSearch keyword: ")
+  (setq kiro-monster-eye-search-term term)
+  (kiro-monster-eye-rotate)
+  (message "👁️  Searching for: %s" term))
+
+(defun kiro-monster-eye-clear-search ()
+  "Clear search filter."
+  (interactive)
+  (setq kiro-monster-eye-search-term nil)
+  (kiro-monster-eye-rotate)
+  (message "👁️  Search cleared"))
 
 (defvar kiro-monster-eye-harmonic 1
   "Current harmonic (1-13 for shards).")
@@ -135,16 +149,22 @@
                                     (with-current-buffer b
                                       (derived-mode-p 'shell-mode 'eshell-mode 'term-mode 'comint-mode)))
                                   (buffer-list)))
+         ;; Apply search filter if active
+         (filtered-shells (if kiro-monster-eye-search-term
+                              (seq-filter (lambda (b)
+                                            (string-match-p kiro-monster-eye-search-term (buffer-name b)))
+                                          all-shells)
+                            all-shells))
          ;; Separate shells with prompts from others
-         (with-prompts (seq-filter #'kiro-monster-eye-has-prompt-p all-shells))
-         (without-prompts (seq-filter (lambda (b) (not (kiro-monster-eye-has-prompt-p b))) all-shells))
+         (with-prompts (seq-filter #'kiro-monster-eye-has-prompt-p filtered-shells))
+         (without-prompts (seq-filter (lambda (b) (not (kiro-monster-eye-has-prompt-p b))) filtered-shells))
          ;; Sort non-prompt shells by activity
          (sorted-active (seq-sort (lambda (a b)
                                      (> (kiro-monster-eye-score-buffer a)
                                         (kiro-monster-eye-score-buffer b)))
                                    without-prompts))
-         ;; Prompts first, then active shells, take top 4
-         (top-4 (seq-take (append with-prompts sorted-active) 4)))
+         ;; Prompts first, then active shells, take top 4 UNIQUE
+         (top-4 (seq-take (seq-uniq (append with-prompts sorted-active)) 4)))
     
     ;; Update 4 bottom panes (skip first window which is Eye)
     (let ((windows (cdr (window-list))))  ; Skip Eye window
@@ -271,6 +291,8 @@
     (define-key map (kbd "g") 'kiro-monster-eye-rotate)
     (define-key map (kbd "v") 'kiro-monster-eye-cycle-view)
     (define-key map (kbd "h") 'kiro-monster-eye-cycle-harmonic)
+    (define-key map (kbd "s") 'kiro-monster-eye-search)
+    (define-key map (kbd "c") 'kiro-monster-eye-clear-search)
     (define-key map (kbd "n") 'kiro-monster-eye-next)
     (define-key map (kbd "p") 'kiro-monster-eye-prev)
     (define-key map (kbd "r") 'kiro-monster-eye-rename-all-shells)
@@ -312,7 +334,7 @@
 (defun kiro-monster-eye-help ()
   "Show help."
   (interactive)
-  (message "v=view h=harmonic g=refresh n=next p=prev r=rename-shells R=rename-kiro q=quit"))
+  (message "s=search c=clear v=view h=harmonic g=refresh n=next p=prev r=rename q=quit"))
 
 ;;;###autoload
 (defun kiro-monster-eye ()
