@@ -1,23 +1,23 @@
-;;; kiro-dasl-compressor.el --- DASL-FRACTRAN-RDFa compressor for Emacs buffers -*- lexical-binding: t; -*-
+;;; kiro-dasl-compressor.el --- DASL-FRACTRAN-RDFa shadow for Emacs buffers -*- lexical-binding: t; -*-
 
 ;; Version: 1.0.0
 ;; Package-Requires: ((emacs "27.1"))
 
 ;;; Commentary:
-;; Compress all Emacs buffers using DASL-FRACTRAN-RDFa encoding
+;; Create FRACTRAN shadows of Emacs buffers with Monster symmetry
 ;; - Extract semantic structure from buffers
-;; - Encode as FRACTRAN programs
+;; - Encode as FRACTRAN programs (lossy fingerprint)
 ;; - Classify with Monster symmetry
 ;; - Generate RDFa metadata
-;; - Achieve high compression ratios
+;; - Store original content as "shadow" for recovery
 
 ;;; Code:
 
 (require 'kiro-fractran-cid)
 (require 'kiro-monster-tree)
 
-(defun kiro-dasl-compress-buffer (buffer)
-  "Compress BUFFER to DASL-FRACTRAN-RDFa format."
+(defun kiro-dasl-shadow-buffer (buffer)
+  "Create FRACTRAN shadow of BUFFER with original content."
   (with-current-buffer buffer
     (let* ((name (buffer-name))
            (content (buffer-substring-no-properties (point-min) (point-max)))
@@ -30,7 +30,7 @@
            (class (kiro-monster-tree-classify cid))
            ;; Extract structure
            (structure (kiro-dasl-extract-structure content mode))
-           ;; Encode as FRACTRAN
+           ;; Encode as FRACTRAN (lossy fingerprint)
            (fractran (kiro-dasl-to-fractran structure))
            ;; Generate RDFa
            (rdfa (kiro-dasl-to-rdfa name cid class structure)))
@@ -43,7 +43,9 @@
             :shard (plist-get class :shard)
             :fractran fractran
             :rdfa rdfa
-            :ratio (/ (float size) (length (prin1-to-string fractran)))))))
+            :shadow content  ; Original content for recovery
+            :fingerprint-size (length (prin1-to-string fractran))
+            :shadow-ratio (/ (float size) (length (prin1-to-string fractran)))))))
 
 (defun kiro-dasl-extract-structure (content mode)
   "Extract semantic structure from CONTENT based on MODE."
@@ -131,34 +133,34 @@
           (prin1-to-string structure)))
 
 (defun kiro-dasl-compress-all-buffers ()
-  "Compress all Emacs buffers and generate report."
+  "Create FRACTRAN shadows of all Emacs buffers."
   (interactive)
   (let* ((buffers (buffer-list))
-         (compressed (mapcar #'kiro-dasl-compress-buffer buffers))
+         (compressed (mapcar #'kiro-dasl-shadow-buffer buffers))
          (total-size (apply #'+ (mapcar (lambda (b) (plist-get b :size)) compressed)))
          (total-fractran (apply #'+ (mapcar (lambda (b) (length (plist-get b :fractran))) compressed)))
-         (avg-ratio (/ (apply #'+ (mapcar (lambda (b) (plist-get b :ratio)) compressed))
-                       (float (length compressed)))))
+         (total-shadow (apply #'+ (mapcar (lambda (b) (length (plist-get b :shadow))) compressed))))
     
-    (with-current-buffer (get-buffer-create "*DASL-Compression*")
+    (with-current-buffer (get-buffer-create "*DASL-Shadow*")
       (erase-buffer)
       (insert "╔═══════════════════════════════════════════════════════╗\n")
-      (insert "║     DASL-FRACTRAN-RDFa COMPRESSION REPORT           ║\n")
+      (insert "║     DASL-FRACTRAN-RDFa SHADOW REPORT                ║\n")
       (insert "╚═══════════════════════════════════════════════════════╝\n\n")
       
       (insert (format "Buffers: %d\n" (length compressed)))
-      (insert (format "Total size: %d bytes\n" total-size))
-      (insert (format "FRACTRAN size: %d fractions\n" total-fractran))
-      (insert (format "Average ratio: %.2fx\n\n" avg-ratio))
+      (insert (format "Original: %d bytes\n" total-size))
+      (insert (format "Shadow: %d bytes (100%% stored for recovery)\n" total-shadow))
+      (insert (format "FRACTRAN fingerprint: %d fractions (LOSSY)\n" total-fractran))
+      (insert (format "⚠ Fingerprint NOT recoverable - shadow required\n\n"))
       
-      (insert "Top 10 by compression ratio:\n")
+      (insert "Top 10 by fingerprint ratio (NOT compression):\n")
       (insert "─────────────────────────────────────────────────────\n")
-      (dolist (buf (seq-take (seq-sort (lambda (a b) (> (plist-get a :ratio) (plist-get b :ratio))) compressed) 10))
-        (insert (format "%-30s %6d → %3d (%.1fx) Sh%d\n"
+      (dolist (buf (seq-take (seq-sort (lambda (a b) (> (plist-get a :shadow-ratio) (plist-get b :shadow-ratio))) compressed) 10))
+        (insert (format "%-30s %6d bytes, %3d fracs (%.1fx) Sh%d\n"
                         (truncate-string-to-width (plist-get buf :name) 30)
                         (plist-get buf :size)
                         (length (plist-get buf :fractran))
-                        (plist-get buf :ratio)
+                        (plist-get buf :shadow-ratio)
                         (plist-get buf :shard))))
       
       (insert "\n\nShard distribution:\n")
