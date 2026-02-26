@@ -10,6 +10,9 @@
 
 ;;; Code:
 
+(require 'kiro-task-mode)
+(require 'kiro-shell-keybindings)
+
 (defgroup kiro nil
   "Kiro system integration."
   :group 'tools
