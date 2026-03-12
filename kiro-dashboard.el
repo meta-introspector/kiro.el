@@ -73,13 +73,18 @@
     (insert "\n")))
 
 (defun kiro-dashboard-insert-shells ()
-  "Insert running shell buffers"
-  (insert (propertize "Shells\n" 'face 'bold))
+  "Insert running kiro shell buffers"
+  (insert (propertize "Kiro Shells\n" 'face 'bold))
   (let ((shells (seq-filter (lambda (buf)
                               (with-current-buffer buf
-                                (or (eq major-mode 'shell-mode)
-                                    (eq major-mode 'eshell-mode)
-                                    (eq major-mode 'kiro-shell-task-mode))))
+                                (and (or (eq major-mode 'shell-mode)
+                                         (eq major-mode 'eshell-mode)
+                                         (eq major-mode 'kiro-shell-task-mode))
+                                     (save-excursion
+                                       (goto-char (point-max))
+                                       (forward-line -1)
+                                       (or (re-search-forward "^[0-9]+% >" (line-end-position) t)
+                                           (re-search-forward "kiro-cli" (point-max) t))))))
                             (buffer-list))))
     (if (null shells)
         (insert (propertize "  none\n\n" 'face 'shadow))
