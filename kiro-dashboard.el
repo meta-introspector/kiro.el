@@ -30,21 +30,15 @@
     (let ((inhibit-read-only t))
       (erase-buffer)
       (kiro-dashboard-insert-header)
-      (kiro-dashboard-insert-service-status)
-      (kiro-dashboard-insert-tunnel-status)
       (kiro-dashboard-insert-shells)
       (kiro-dashboard-insert-query-jobs)
-      (kiro-dashboard-insert-cache-stats)
-      (kiro-dashboard-insert-buffers)
       (goto-char (point-min)))
     (kiro-dashboard-mode)))
 
 (defun kiro-dashboard-insert-header ()
   "Insert dashboard header"
-  (insert (propertize "╔═══════════════════════════════════════════════════════════╗\n" 'face 'bold))
-  (insert (propertize "║              🚀 KIRO SYSTEM DASHBOARD 🚀                 ║\n" 'face '(:foreground "cyan" :weight bold)))
-  (insert (propertize "╚═══════════════════════════════════════════════════════════╝\n\n" 'face 'bold))
-  (insert (propertize "Press ? for help\n\n" 'face 'shadow)))
+  (insert (propertize "KIRO DASHBOARD" 'face '(:foreground "cyan" :weight bold)))
+  (insert (propertize " | Press ? for help\n\n" 'face 'shadow)))
 
 (defun kiro-dashboard-insert-service-status ()
   "Insert service status"
@@ -80,29 +74,28 @@
 
 (defun kiro-dashboard-insert-shells ()
   "Insert running shell buffers"
-  (insert (propertize "## Shell Buffers\n\n" 'face 'bold))
+  (insert (propertize "Shells\n" 'face 'bold))
   (let ((shells (seq-filter (lambda (buf)
                               (with-current-buffer buf
                                 (or (eq major-mode 'shell-mode)
                                     (eq major-mode 'eshell-mode)
-                                    (eq major-mode 'term-mode)
-                                    (eq major-mode 'vterm-mode)
                                     (eq major-mode 'kiro-shell-task-mode))))
                             (buffer-list))))
     (if (null shells)
-        (insert (propertize "No shells running\n\n" 'face 'shadow))
+        (insert (propertize "  none\n\n" 'face 'shadow))
       (dolist (buf shells)
         (let* ((name (buffer-name buf))
-               (mode (with-current-buffer buf major-mode))
-               (status (kiro-dashboard-get-shell-status buf))
-               (is-kiro (or (eq mode 'kiro-shell-task-mode)
-                           (string-match-p "\\.kiro\\.org$" name))))
-          (insert (propertize "• " 'face 'success))
+               (proc (get-buffer-process buf))
+               (running (and proc (process-live-p proc)))
+               (dir (with-current-buffer buf 
+                      (abbreviate-file-name default-directory))))
+          (insert "  ")
+          (insert (if running 
+                      (propertize "●" 'face '(:foreground "green"))
+                    (propertize "○" 'face '(:foreground "red"))))
+          (insert " ")
           (insert (propertize name 'face '(:foreground "yellow")))
-          (insert (format " [%s]" mode))
-          (when is-kiro
-            (insert (propertize " ✓KIRO" 'face '(:foreground "green"))))
-          (insert (format " - %s\n" status))))
+          (insert (format " %s\n" (propertize dir 'face 'shadow)))))
       (insert "\n"))))
 
 (defun kiro-dashboard-get-shell-status (buf)
@@ -150,20 +143,14 @@
 
 (defun kiro-dashboard-insert-query-jobs ()
   "Insert active query jobs"
-  (insert (propertize "## Query Jobs\n\n" 'face 'bold))
-  (if (= 0 (hash-table-count kiro-query-jobs))
-      (insert (propertize "No active jobs\n\n" 'face 'shadow))
-    (maphash (lambda (id job)
-               (let* ((pattern (plist-get job :pattern))
-                      (job-plan (plist-get job :plan))
-                      (strategy (alist-get 'strategy job-plan)))
-                 (insert (propertize "• " 'face 'success))
-                 (insert (propertize (format "[%s]" id) 'face '(:foreground "yellow")))
-                 (insert (format " %s " pattern))
-                 (insert (propertize (format "(%s)" strategy) 'face 'shadow))
-                 (insert "\n")))
-             kiro-query-jobs)
-    (insert "\n")))
+  (let ((count (hash-table-count kiro-query-jobs)))
+    (when (> count 0)
+      (insert (propertize "Query Jobs\n" 'face 'bold))
+      (maphash (lambda (id job)
+                 (let ((pattern (plist-get job :pattern)))
+                   (insert (format "  [%s] %s\n" id pattern))))
+               kiro-query-jobs)
+      (insert "\n"))))
 
 (defun kiro-dashboard-insert-cache-stats ()
   "Insert cache statistics"
@@ -201,7 +188,7 @@
   (interactive)
   (save-excursion
     (beginning-of-line)
-    (when (looking-at "• \\[\\([0-9]+\\)\\]")
+    (when (looking-at "  \\[\\([0-9]+\\)\\]")
       (let ((job-id (match-string 1)))
         (load-file (expand-file-name "~/.emacs.d/kiro.el/kiro-query-planner.el"))
         (kiro-query-execute job-id)
@@ -216,20 +203,14 @@
     (beginning-of-line)
     (cond
      ;; Query job
-     ((looking-at "• \\[\\([0-9]+\\)\\]")
+     ((looking-at "  \\[\\([0-9]+\\)\\]")
       (let* ((job-id (match-string 1))
              (buf (get-buffer (kiro-query-buffer-name job-id))))
         (if buf
             (switch-to-buffer buf)
           (message "Buffer not found for job %s" job-id))))
      ;; Shell buffer
-     ((looking-at "• \\([^ ]+\\) \\[")
-      (let ((buf-name (match-string 1)))
-        (if (get-buffer buf-name)
-            (switch-to-buffer buf-name)
-          (message "Buffer not found: %s" buf-name))))
-     ;; Kiro buffer
-     ((looking-at "• \\([^ ]+\\) (")
+     ((looking-at "  [●○] \\([^ ]+\\)")
       (let ((buf-name (match-string 1)))
         (if (get-buffer buf-name)
             (switch-to-buffer buf-name)

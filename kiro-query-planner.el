@@ -45,9 +45,18 @@
   "Call Rust planner for PATTERN"
   ;; Fallback to heuristic since binary may not exist
   (list (cons 'pattern pattern)
-        (cons 'tools (if (string-match-p "prime\\|Monster" pattern)
-                         (vector "omnisearch" "plocate")
-                       (vector "omnisearch")))
+        (cons 'tools (cond
+                      ;; Emacs-specific searches
+                      ((string-match-p "buffer\\|emacs" pattern)
+                       (vector "emacs-buffers" "emacs-kiro"))
+                      ;; Math/Monster searches
+                      ((string-match-p "prime\\|Monster\\|group" pattern)
+                       (vector "omnisearch" "plocate" "emacs-buffers"))
+                      ;; Code searches
+                      ((string-match-p "def\\|class\\|function" pattern)
+                       (vector "emacs-buffers" "ripgrep"))
+                      ;; Default: search everywhere
+                      (t (vector "emacs-buffers" "omnisearch" "plocate"))))
         (cons 'strategy (if (string-match-p "prime\\|Monster" pattern)
                             "parallel"
                           "single"))))
@@ -113,6 +122,9 @@
     ("plocate" (kiro-query-plocate pattern))
     ("ripgrep" (kiro-query-ripgrep pattern))
     ("omnisearch" (kiro-query-omnisearch pattern))
+    ("emacs-buffers" (kiro-query-emacs-buffers pattern))
+    ("emacs-kiro" (kiro-query-emacs-kiro pattern))
+    ("emacs-files" (kiro-query-emacs-files pattern))
     ("knowledge" (kiro-query-knowledge pattern))
     (_ (list (format "Unknown tool: %s" tool)))))
 
@@ -126,13 +138,50 @@
                  (format "rg -l --max-count 10 '%s' ~/projects/kiro 2>/dev/null" pattern)) "\n" t))
 
 (defun kiro-query-omnisearch (pattern)
-  "Run omnisearch"
-  (split-string (shell-command-to-string 
-                 (format "cd /mnt/data1/nix/vendor/rust/github && ./omnisearch '%s' 2>/dev/null | head -10" pattern)) "\n" t))
+  "Run omnisearch via emacs-search service"
+  (let* ((url "http://localhost:8093/search/buffers")
+         (json-data (json-encode `((pattern . ,pattern))))
+         (response (shell-command-to-string
+                    (format "curl -s -X POST %s -H 'Content-Type: application/json' -d '%s'"
+                            url json-data))))
+    (condition-case err
+        (let ((results (json-read-from-string response)))
+          (mapcar (lambda (r)
+                    (format "%s:%s: %s" (aref r 0) (aref r 1) (aref r 2)))
+                  results))
+      (error (list (format "Omnisearch error: %s" (error-message-string err)))))))
 
 (defun kiro-query-knowledge (pattern)
   "Search knowledge bases"
   (list (format "Knowledge search: %s (not implemented)" pattern)))
+
+(defun kiro-query-emacs-buffers (pattern)
+  "Search all Emacs buffers via emacs-search service"
+  (kiro-query-emacs-search-api "/search/buffers" pattern))
+
+(defun kiro-query-emacs-kiro (pattern)
+  "Search kiro sessions via emacs-search service"
+  (kiro-query-emacs-search-api "/search/kiro" pattern))
+
+(defun kiro-query-emacs-files (pattern)
+  "Search files via emacs-search service"
+  (kiro-query-emacs-search-api "/search/files" pattern))
+
+(defun kiro-query-emacs-search-api (endpoint pattern)
+  "Call emacs-search API at ENDPOINT with PATTERN"
+  (let* ((url (concat "http://localhost:8093" endpoint))
+         (json-data (json-encode `((pattern . ,pattern))))
+         (response (shell-command-to-string
+                    (format "curl -s -X POST %s -H 'Content-Type: application/json' -d '%s'"
+                            url json-data))))
+    (condition-case err
+        (let ((results (json-read-from-string response)))
+          (if (vectorp results)
+              (mapcar (lambda (r)
+                        (format "%s:%s: %s" (aref r 0) (aref r 1) (aref r 2)))
+                      results)
+            (list (format "Response: %S" results))))
+      (error (list (format "API error: %s" (error-message-string err)))))))
 
 (defun kiro-query-get-results (job-id)
   "Get results for JOB-ID"
@@ -160,3 +209,39 @@
 
 (provide 'kiro-query-planner)
 ;;; kiro-query-planner.el ends here
+
+;; Interactive commands
+
+(defun kiro-omnisearch (pattern)
+  "Search everything using omnisearch planner"
+  (interactive "sSearch pattern: ")
+  (let* ((job-id (format "%d" (random 1000000)))
+         (plan (kiro-query-plan pattern)))
+    (kiro-query-execute job-id)
+    (switch-to-buffer (kiro-query-buffer-name job-id))))
+
+(defun kiro-search-emacs-buffers (pattern)
+  "Search all Emacs buffers"
+  (interactive "sSearch buffers: ")
+  (let ((results (kiro-query-emacs-buffers pattern)))
+    (with-current-buffer (get-buffer-create "*Emacs Buffer Search*")
+      (erase-buffer)
+      (insert (format "# Search: %s\n# Results: %d\n\n" pattern (length results)))
+      (dolist (result results)
+        (insert result "\n"))
+      (goto-char (point-min))
+      (switch-to-buffer (current-buffer)))))
+
+(defun kiro-search-kiro-sessions (pattern)
+  "Search kiro-cli sessions"
+  (interactive "sSearch kiro sessions: ")
+  (let ((results (kiro-query-emacs-kiro pattern)))
+    (with-current-buffer (get-buffer-create "*Kiro Session Search*")
+      (erase-buffer)
+      (insert (format "# Search: %s\n# Results: %d\n\n" pattern (length results)))
+      (dolist (result results)
+        (insert result "\n"))
+      (goto-char (point-min))
+      (switch-to-buffer (current-buffer)))))
+
+(provide 'kiro-query-planner)

@@ -16,6 +16,20 @@
                (get-buffer-process (current-buffer)))
       (comint-send-string (current-buffer) (concat cmd "\n")))))
 
+(defun kiro-setup-task-buffers ()
+  "Setup all kiro-cli shell buffers as comint with task-* names"
+  (interactive)
+  (dolist (buf (buffer-list))
+    (with-current-buffer buf
+      (when (and (eq major-mode 'shell-mode)
+                 (get-buffer-process buf)
+                 (not (string-prefix-p "task-" (buffer-name))))
+        (let* ((proc (get-buffer-process buf))
+               (cmd (process-command proc)))
+          (when (and cmd (member "kiro-cli" cmd))
+            (rename-buffer (generate-new-buffer-name "task-kiro") t)
+            (kiro-task-mode)))))))
+
 (defconst kiro-task-mode-version "1.0.1"
   "Version of kiro-task-mode")
 
