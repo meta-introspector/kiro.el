@@ -75,21 +75,27 @@
 (defun kiro-dashboard-insert-shells ()
   "Insert running kiro shell buffers"
   (insert (propertize "Kiro Shells\n" 'face 'bold))
-  (let ((shells (seq-filter (lambda (buf)
-                              (with-current-buffer buf
-                                (and (or (eq major-mode 'shell-mode)
-                                         (eq major-mode 'eshell-mode)
-                                         (eq major-mode 'kiro-shell-task-mode))
-                                     (save-excursion
-                                       (goto-char (point-max))
-                                       (forward-line -1)
-                                       (or (re-search-forward "^[0-9]+% >" (line-end-position) t)
-                                           (re-search-forward "kiro-cli" (point-max) t))))))
-                            (buffer-list))))
-    (if (null shells)
+  (let* ((shells (seq-filter (lambda (buf)
+                               (with-current-buffer buf
+                                 (and (or (eq major-mode 'shell-mode)
+                                          (eq major-mode 'eshell-mode)
+                                          (eq major-mode 'kiro-shell-task-mode))
+                                      (save-excursion
+                                        (goto-char (point-max))
+                                        (forward-line -1)
+                                        (or (re-search-forward "^[0-9]+% >" (line-end-position) t)
+                                            (re-search-forward "kiro-cli" (point-max) t))))))
+                             (buffer-list)))
+         (shells-with-status (mapcar (lambda (buf)
+                                       (cons buf (kiro-dashboard-shell-waiting-p buf)))
+                                     shells))
+         (sorted-shells (sort shells-with-status (lambda (a b) (and (cdr a) (not (cdr b)))))))
+    (if (null sorted-shells)
         (insert (propertize "  none\n\n" 'face 'shadow))
-      (dolist (buf shells)
-        (let* ((name (buffer-name buf))
+      (dolist (item sorted-shells)
+        (let* ((buf (car item))
+               (waiting (cdr item))
+               (name (buffer-name buf))
                (proc (get-buffer-process buf))
                (running (and proc (process-live-p proc)))
                (dir (with-current-buffer buf 
@@ -99,9 +105,19 @@
                       (propertize "●" 'face '(:foreground "green"))
                     (propertize "○" 'face '(:foreground "red"))))
           (insert " ")
+          (when waiting
+            (insert (propertize "⚠ " 'face '(:foreground "yellow"))))
           (insert (propertize name 'face '(:foreground "yellow")))
           (insert (format " %s\n" (propertize dir 'face 'shadow)))))
       (insert "\n"))))
+
+(defun kiro-dashboard-shell-waiting-p (buf)
+  "Check if shell BUF is waiting for input (has prompt)"
+  (with-current-buffer buf
+    (save-excursion
+      (goto-char (point-max))
+      (forward-line -1)
+      (re-search-forward "^[0-9]+% >" (line-end-position) t))))
 
 (defun kiro-dashboard-get-shell-status (buf)
   "Get status of shell buffer BUF"
