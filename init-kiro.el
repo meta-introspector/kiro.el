@@ -10,6 +10,7 @@
 (require 'kiro)
 (load-file (expand-file-name "kiro-dashboard.el" kiro-base-dir))
 (load-file (expand-file-name "kiro-task-mode.el" kiro-base-dir))
+(load-file (expand-file-name "kiro-jump.el" kiro-base-dir))
 
 ;; Enable shell keybindings automatically
 (add-hook 'shell-mode-hook
