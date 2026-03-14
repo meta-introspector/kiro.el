@@ -5,6 +5,22 @@
 
 ;;; Code:
 
+(defgroup kiro-dashboard nil
+  "Kiro dashboard settings."
+  :group 'kiro
+  :prefix "kiro-dashboard-")
+
+(defcustom kiro-spool-directory "~/kiro-spool/"
+  "Directory for Kiro spool files."
+  :type 'directory
+  :group 'kiro-dashboard)
+
+(defcustom kiro-elisp-directory
+  (file-name-directory (or load-file-name buffer-file-name default-directory))
+  "Directory containing Kiro elisp files."
+  :type 'directory
+  :group 'kiro-dashboard)
+
 (defvar kiro-query-jobs nil
   "Active query jobs")
 
@@ -43,7 +59,7 @@
 (defun kiro-dashboard-insert-service-status ()
   "Insert service status"
   (insert (propertize "## Service Status\n\n" 'face 'bold))
-  (let ((spool-active (file-directory-p "~/kiro-spool/"))
+  (let ((spool-active (file-directory-p kiro-spool-directory))
         (jobs-count (hash-table-count kiro-query-jobs)))
     (insert (format "Spool:  %s\n" (if spool-active 
                                        (propertize "🟢 ACTIVE" 'face '(:foreground "green"))
@@ -54,7 +70,7 @@
 (defun kiro-dashboard-insert-tunnel-status ()
   "Insert tunnel peer status"
   (insert (propertize "## Tunnel Peers\n\n" 'face 'bold))
-  (let ((tunnel-dir "~/kiro-spool/tunnel/")
+  (let ((tunnel-dir (expand-file-name "tunnel/" kiro-spool-directory))
         (peers '()))
     (when (file-directory-p tunnel-dir)
       (dolist (file (directory-files tunnel-dir t "^peer-.*\\.json$"))
@@ -72,20 +88,32 @@
       (insert (propertize "No peers connected\n" 'face 'shadow)))
     (insert "\n")))
 
+(defun kiro-dashboard--kiro-shell-p (buf)
+  "Return non-nil if BUF is a kiro shell."
+  (with-current-buffer buf
+    (and (or (eq major-mode 'shell-mode)
+             (eq major-mode 'eshell-mode)
+             (eq major-mode 'comint-mode)
+             (derived-mode-p 'comint-mode))
+         (or ;; buffer name contains kiro
+             (string-match-p "\\b[Kk]iro\\b" (buffer-name))
+             ;; kiro-task-mode active
+             (and (boundp 'kiro-task-mode) kiro-task-mode)
+             ;; process cmdline contains kiro
+             (let ((proc (get-buffer-process buf)))
+               (and proc (process-live-p proc)
+                    (string-match-p "kiro" (or (process-name proc) ""))))
+             ;; last 20 lines contain kiro prompt or kiro-cli text
+             (save-excursion
+               (goto-char (point-max))
+               (forward-line -20)
+               (or (re-search-forward "^[0-9]+% >" (point-max) t)
+                   (re-search-forward "kiro-cli\\|kiro>" (point-max) t)))))))
+
 (defun kiro-dashboard-insert-shells ()
   "Insert running kiro shell buffers"
   (insert (propertize "Kiro Shells\n" 'face 'bold))
-  (let* ((shells (seq-filter (lambda (buf)
-                               (with-current-buffer buf
-                                 (and (or (eq major-mode 'shell-mode)
-                                          (eq major-mode 'eshell-mode)
-                                          (eq major-mode 'kiro-shell-task-mode))
-                                      (save-excursion
-                                        (goto-char (point-max))
-                                        (forward-line -1)
-                                        (or (re-search-forward "^[0-9]+% >" (line-end-position) t)
-                                            (re-search-forward "kiro-cli" (point-max) t))))))
-                             (buffer-list)))
+  (let* ((shells (seq-filter #'kiro-dashboard--kiro-shell-p (buffer-list)))
          (shells-with-status (mapcar (lambda (buf)
                                        (cons buf (kiro-dashboard-shell-waiting-p buf)))
                                      shells))
@@ -199,7 +227,7 @@
   "Create new query from dashboard"
   (interactive)
   (let ((pattern (read-string "Query pattern: ")))
-    (load-file (expand-file-name "~/.emacs.d/kiro.el/kiro-query-planner.el"))
+    (load-file (expand-file-name "kiro-query-planner.el" kiro-elisp-directory))
     (kiro-query-plan pattern)
     (kiro-dashboard-refresh)
     (message "Query planned: %s" pattern)))
@@ -211,7 +239,7 @@
     (beginning-of-line)
     (when (looking-at "  \\[\\([0-9]+\\)\\]")
       (let ((job-id (match-string 1)))
-        (load-file (expand-file-name "~/.emacs.d/kiro.el/kiro-query-planner.el"))
+        (load-file (expand-file-name "kiro-query-planner.el" kiro-elisp-directory))
         (kiro-query-execute job-id)
         (message "Executing job %s" job-id)
         (sit-for 1)
@@ -249,7 +277,13 @@
 (defun kiro-dashboard-help ()
   "Show dashboard help"
   (interactive)
-  (message "g:refresh n:new-query e:execute v:view s:convert-shells c:clear-cache q:quit ?:help"))
+  (message "g:refresh n:new-query e:execute v:view s:convert-shells c:clear-cache h:history q:quit ?:help"))
+
+(defun kiro-dashboard-open-history ()
+  "Open chat history from dashboard."
+  (interactive)
+  (load-file (expand-file-name "kiro-chat-history.el" kiro-elisp-directory))
+  (kiro-chat-history))
 
 (defvar kiro-dashboard-mode-map
   (let ((map (make-sparse-keymap)))
@@ -259,6 +293,7 @@
     (define-key map (kbd "v") 'kiro-dashboard-view-job)
     (define-key map (kbd "c") 'kiro-dashboard-clear-cache)
     (define-key map (kbd "s") 'kiro-dashboard-convert-shells-to-kiro)
+    (define-key map (kbd "h") 'kiro-dashboard-open-history)
     (define-key map (kbd "q") 'quit-window)
     (define-key map (kbd "RET") 'kiro-dashboard-view-job)
     (define-key map (kbd "?") 'kiro-dashboard-help)

@@ -56,6 +56,13 @@
   (message "Query planned: %s" pattern))
 
 ;;;###autoload
+(defun kiro-chat-history ()
+  "Browse all kiro chats and logs."
+  (interactive)
+  (load-file (expand-file-name "~/.emacs.d/kiro.el/kiro-chat-history.el"))
+  (kiro-chat-history))
+
+;;;###autoload
 (defun kiro-sessions ()
   "Manage kiro CLI sessions."
   (interactive)
